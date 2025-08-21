@@ -1,5 +1,5 @@
 import { GoogleGenAI, Chat, Content } from "@google/genai";
-import { SYSTEM_INSTRUCTION } from '../constants';
+import { SYSTEM_INSTRUCTION } from '../src/constants';
 
 export const config = {
   runtime: 'edge',
