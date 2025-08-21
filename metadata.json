@@ -1,0 +1,7 @@
+{
+  "name": "Sa Pa Real Estate AI Assistant",
+  "description": "An AI-powered real estate assistant to help you find properties in Sa Pa, Vietnam. Chat with our expert, Nguyễn Hải, to discover land, homestays, and villas that match your needs. This app supports text and voice input.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
