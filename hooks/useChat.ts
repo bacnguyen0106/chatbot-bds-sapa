@@ -1,8 +1,12 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Message, RealEstateProperty } from '../types';
 import { INITIAL_MESSAGE } from '../constants';
-import { sendMessageStream } from '../services/geminiService';
+
+// A type guard to check if a message has content and is not the initial placeholder
+const isMeaningfulMessage = (msg: Message): boolean => {
+    return msg.id !== 'initial' && msg.text.trim().length > 0;
+};
+
 
 export const useChat = () => {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -19,7 +23,8 @@ export const useChat = () => {
     }, []);
 
     useEffect(() => {
-        if (messages.length > 0) {
+        // We only save meaningful history, not the initial prompt message if it's the only one.
+        if (messages.length > 1 || (messages.length === 1 && messages[0].id !== 'initial')) {
             localStorage.setItem('chatHistory', JSON.stringify(messages));
         }
     }, [messages]);
@@ -58,6 +63,12 @@ export const useChat = () => {
         setIsLoading(true);
 
         const userMessage: Message = { id: Date.now().toString(), text, sender: 'user' };
+        
+        const historyForApi = [...messages, userMessage].filter(isMeaningfulMessage).map(msg => ({
+             role: msg.sender === 'user' ? 'user' : 'model',
+             parts: [{ text: msg.text }],
+        }));
+
         setMessages(prev => [...prev, userMessage]);
 
         const botMessageId = (Date.now() + 1).toString();
@@ -65,15 +76,34 @@ export const useChat = () => {
         setMessages(prev => [...prev, placeholderMessage]);
         
         try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ history: historyForApi }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed with status ${response.status}`);
+            }
+
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
             let fullResponse = '';
-            const stream = sendMessageStream(text);
-            for await (const chunk of stream) {
-                fullResponse += chunk;
-                setMessages(prev => prev.map(msg => msg.id === botMessageId ? { ...msg, text: fullResponse } : msg));
+
+            if (reader) {
+                 while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    fullResponse += chunk;
+                    setMessages(prev => prev.map(msg => msg.id === botMessageId ? { ...msg, text: fullResponse } : msg));
+                }
             }
             
             const parsedData = parseBotResponse(fullResponse);
-            setMessages(prev => prev.map(msg => msg.id === botMessageId ? { ...msg, ...parsedData } : msg));
+            setMessages(prev => prev.map(msg => msg.id === botMessageId ? { ...msg, ...parsedData, text: parsedData.text || '' } : msg));
 
         } catch (error) {
             console.error("Error sending message:", error);
@@ -87,7 +117,7 @@ export const useChat = () => {
             setIsLoading(false);
             isProcessingStream.current = false;
         }
-    }, []);
+    }, [messages]);
     
     return { messages, isLoading, sendMessage };
 };
